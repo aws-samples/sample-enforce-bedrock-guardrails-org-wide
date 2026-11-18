@@ -1,0 +1,162 @@
+// =============================================================================
+// CloudWatch Logs Insights queries used in the blog post.
+//
+// How Bedrock calls land in CloudTrail (CSR-010) — see
+// https://docs.aws.amazon.com/bedrock/latest/userguide/logging-using-cloudtrail.html
+//
+//   * InvokeModel, InvokeModelWithResponseStream, Converse, ConverseStream
+//     are logged as MANAGEMENT events. Any trail that records management
+//     events (including the default Control Tower / Org trail) captures
+//     them. Q1, Q3 and Q4 below run against these.
+//
+//   * ApplyGuardrail — both direct calls AND the guardrail evaluations
+//     Bedrock performs inside a model invocation — is logged as a DATA
+//     event on resource type AWS::Bedrock::Guardrail. Data events are OFF
+//     by default; Q2 returns nothing until you enable them.
+//
+//     !! put-event-selectors REPLACES every selector on the trail. It does
+//     !! not append. A selector list containing only the data-event rule
+//     !! below would stop that trail logging management events — your
+//     !! primary audit record. Two safe ways to run it:
+//     !!   (a) run it against a SEPARATE, dedicated demonstration trail
+//     !!       created for this sample, never your organization or
+//     !!       account audit trail; or
+//     !!   (b) include a management-events selector in the SAME call, as
+//     !!       shown, so existing logging is preserved. Before running (b)
+//     !!       on a real trail, dump its current selectors with
+//     !!         aws cloudtrail get-event-selectors --trail-name <TRAIL_NAME>
+//     !!       and fold any existing rules (other data-event resource
+//     !!       types, exclusions) into the list as well.
+//     Ref: https://docs.aws.amazon.com/awscloudtrail/latest/APIReference/API_PutEventSelectors.html
+//
+//       aws cloudtrail put-event-selectors --trail-name <TRAIL_NAME> \
+//         --advanced-event-selectors '[
+//           {
+//             "Name": "Keep logging all management events",
+//             "FieldSelectors": [
+//               {"Field": "eventCategory", "Equals": ["Management"]}
+//             ]
+//           },
+//           {
+//             "Name": "Bedrock guardrail evaluations (data events)",
+//             "FieldSelectors": [
+//               {"Field": "eventCategory",  "Equals": ["Data"]},
+//               {"Field": "resources.type", "Equals": ["AWS::Bedrock::Guardrail"]}
+//             ]
+//           }
+//         ]'
+//
+//     Data events are billed per event and guardrail evaluations are
+//     high-volume; check CloudTrail pricing before enabling on a busy
+//     account.
+//
+//     In an ApplyGuardrail data event produced by an enforced guardrail
+//     (account-level or organization policy) with no guardrail in the
+//     request, requestParameters.guardrailIdentifier is the literal marker
+//     "ENFORCED", not an id. The resources[] list names the guardrail ARNs
+//     that were in scope; assessments[] entries are not attributed to a
+//     specific guardrail.
+//
+//   * eventSource is "bedrock.amazonaws.com" for all of the above, even
+//     though the calls go to the bedrock-runtime endpoint. Filtering on
+//     "bedrock-runtime.amazonaws.com" matches nothing.
+//
+//   * Streaming calls (InvokeModelWithResponseStream, ConverseStream) emit
+//     a second event with eventType "AwsServiceEvent" when the stream
+//     finishes, carrying token counts. It is not an API call and is not
+//     evaluated by IAM or SCPs. Every query below filters
+//     eventType = "AwsApiCall" so streams are not double-counted.
+//
+// The queries assume CloudTrail is delivering to a CloudWatch log group
+// (e.g. `aws-cloudtrail-logs-<account>-<random>`). Pick that log group in
+// the query bar.
+// =============================================================================
+
+
+// -----------------------------------------------------------------------------
+// Q1. Bypass attempts: invoke calls denied by an SCP because no
+//     guardrailIdentifier was attached.
+//
+// Only relevant if you adopted the optional Layer 2 SCP backstop described
+// in the blog post. Surfaces every IAM principal whose call was rejected
+// with AccessDeniedException mentioning the guardrail condition key.
+// Management events — no data-event setup required.
+// -----------------------------------------------------------------------------
+
+fields @timestamp, eventName, errorCode, errorMessage,
+       userIdentity.arn as principal,
+       requestParameters.modelId as model,
+       awsRegion
+| filter eventSource = "bedrock.amazonaws.com"
+| filter eventType = "AwsApiCall"
+| filter eventName in ["InvokeModel", "InvokeModelWithResponseStream", "Converse", "ConverseStream"]
+| filter errorCode = "AccessDeniedException"
+| filter errorMessage like /GuardrailIdentifier/ or errorMessage like /guardrail/
+| stats count(*) as bypass_attempts by principal, model
+| sort bypass_attempts desc
+| limit 25
+
+
+// -----------------------------------------------------------------------------
+// Q2. Guardrail evaluations and interventions over time, by guardrail.
+//
+// Uses the ApplyGuardrail DATA event, which is the only CloudTrail record of
+// what a guardrail decided. Requires the AWS::Bedrock::Guardrail data-event
+// selector above. Pair with the AWS/Bedrock/Guardrails CloudWatch metrics
+// (this repo's dashboard stack) for a daily compliance view.
+//
+// requestParameters.guardrailIdentifier is "ENFORCED" when an account-level
+// or organization-enforced guardrail evaluated a request that carried no
+// guardrail of its own — that bucket is exactly the Layer 1 / Layer 3 traffic.
+// -----------------------------------------------------------------------------
+
+fields @timestamp,
+       requestParameters.guardrailIdentifier as guardrail,
+       responseElements.action as action
+| filter eventSource = "bedrock.amazonaws.com"
+| filter eventType = "AwsApiCall"
+| filter eventName = "ApplyGuardrail"
+| stats count(*) as evaluations,
+        sum(action = "GUARDRAIL_INTERVENED") as intervened
+        by bin(1h), guardrail
+
+
+// -----------------------------------------------------------------------------
+// Q3. Principals attaching the same guardrail across multiple regions.
+//
+// A signal that an application is deployed multi-region — useful when sizing
+// the StackSet rollout list. Management events.
+// -----------------------------------------------------------------------------
+
+fields userIdentity.arn as principal,
+       awsRegion,
+       requestParameters.guardrailIdentifier as guardrail
+| filter eventSource = "bedrock.amazonaws.com"
+| filter eventType = "AwsApiCall"
+| filter eventName in ["InvokeModel", "InvokeModelWithResponseStream", "Converse", "ConverseStream"]
+| filter ispresent(requestParameters.guardrailIdentifier)
+| stats count_distinct(awsRegion) as region_count by principal, guardrail
+| filter region_count > 1
+| sort region_count desc
+
+
+// -----------------------------------------------------------------------------
+// Q4. Drift check: successful invokes that carried no guardrailIdentifier.
+//
+// With only Layer 4 (per-app attachment) in place this should be empty.
+// With Layer 1 or Layer 3 active these calls are still governed (the
+// enforced guardrail evaluates them; see Q2's "ENFORCED" bucket), so a
+// non-empty result here means "relying on enforcement, not on the app".
+// Run weekly as a regression check. Management events.
+// -----------------------------------------------------------------------------
+
+fields @timestamp, userIdentity.arn as principal,
+       requestParameters.modelId as model,
+       awsRegion
+| filter eventSource = "bedrock.amazonaws.com"
+| filter eventType = "AwsApiCall"
+| filter eventName in ["InvokeModel", "InvokeModelWithResponseStream", "Converse", "ConverseStream"]
+| filter not ispresent(requestParameters.guardrailIdentifier)
+| filter not ispresent(errorCode)
+| stats count(*) as unattached_invokes by principal, model
+| sort unattached_invokes desc

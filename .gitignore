@@ -1,0 +1,50 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Microsoft Office lock files
+~$*
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+
+# Node / CDK
+node_modules/
+cdk.out/
+.cdk.staging/
+*.tsbuildinfo
+
+# Benchmark output (regenerated each run)
+results/*.csv
+results/*.json
+results/*.log
+results/*.png
+!results/.gitkeep
+
+# CDK
+cdk/cdk.out/
+cdk/.cdk.staging/
+cdk/node_modules/
+*.tsbuildinfo
+
+# Customer pre-read — not for the shared repo unless explicitly approved.
+# Remove this line if you've reviewed and want it committed.
+Bedrock Guardrails Architecture (DOCX).docx
+
+# Blog draft and proposal docs — internal/pre-publication, not for the repo.
+blog/*.docx
+blog/*.md
+blog/*.png
+
+# Ad-hoc PDF in workspace root — provenance unclear, exclude until reviewed.
+Doc1.pdf
+
+# generated layout draft; the canonical diagram is the SVG
+images/architecture-draft.png

@@ -1,0 +1,26 @@
+{
+  "bedrock": {
+    "guardrail_inference": {
+      "us-east-1": {
+        "blog_baseline": {
+          "identifier": {
+            "@@assign": "<<GUARDRAIL_ARN>>:<<GUARDRAIL_VER>>"
+          },
+          "selective_content_guarding": {
+            "system": { "@@assign": "comprehensive" },
+            "messages": { "@@assign": "comprehensive" }
+          },
+          "model_enforcement": {
+            "included_models": { "@@assign": ["ALL"] },
+            "excluded_models": {
+              "@@assign": [
+                "amazon.titan-embed-text-v2:0",
+                "cohere.embed-english-v3"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

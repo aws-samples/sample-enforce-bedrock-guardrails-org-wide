@@ -1,0 +1,258 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Bedrock Guardrails — CI/CD with runtime test-as-release-gate
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Pipeline shape:
+#
+#   lint  →  synth  →  deploy-dev  →  verify-dev  →  deploy-prod (manual)
+#                                                       └→  verify-prod
+#
+# The unique bit is `verify-dev` / `verify-prod`: after CDK deploys,
+# scripts/verify_deployment.py invokes the deployed guardrail with
+# real prompts and asserts on the runtime behaviour (latency budget,
+# intervention on bad prompt, DRAFT rejection). A failed assertion fails the
+# pipeline and the next stage does not run.
+#
+# Authentication — SANDBOX ONLY as written:
+#   The jobs below read static credentials from GitLab CI/CD variables
+#   (Settings → CI/CD → Variables, marked Masked + Protected):
+#       DEV_AWS_ACCESS_KEY_ID, DEV_AWS_SECRET_ACCESS_KEY, DEV_AWS_SESSION_TOKEN
+#       PROD_AWS_ACCESS_KEY_ID, PROD_AWS_SECRET_ACCESS_KEY, PROD_AWS_SESSION_TOKEN
+#   Long-lived keys in CI variables are a leak risk (fork pipelines, runner
+#   compromise, misconfigured jobs) and never expire on their own. Do not use
+#   this pattern against any account you care about.
+#
+#   Production-strength alternative — GitLab → AWS OIDC federation:
+#   delete the *_AWS_* variables above and replace each job's `variables:`
+#   credential block with the `.aws-oidc` template below (`extends:`). The
+#   job requests a short-lived ID token and exchanges it with STS for a
+#   scoped role session; no long-term key exists anywhere.
+#
+#   AWS-side prerequisites (once per account):
+#     1. IAM OIDC identity provider for your GitLab URL, audience = the
+#        `aud` value below.
+#     2. One IAM role per stage (gitlab-deploy-dev, gitlab-verify-dev,
+#        gitlab-deploy-prod, gitlab-verify-prod). Trust policy conditions on
+#        `<gitlab-host>:sub` = `project_path:<group>/<project>:ref_type:branch:ref:main`
+#        so only the protected branch of this project can assume it.
+#        Permissions policy grants only what the stage needs — the verify
+#        roles need bedrock:InvokeModel, bedrock:ApplyGuardrail and
+#        bedrock:GetGuardrail on the specific guardrail/model ARNs, nothing else.
+#   Docs: https://docs.gitlab.com/ci/cloud_services/aws/
+# ─────────────────────────────────────────────────────────────────────────────
+
+# .aws-oidc:
+#   id_tokens:
+#     GITLAB_OIDC_TOKEN:
+#       aud: https://gitlab.example.com          # must match the IAM OIDC provider audience
+#   variables:
+#     AWS_ROLE_ARN: arn:aws:iam::<ACCOUNT_ID>:role/<STAGE_ROLE_NAME>   # override per job
+#   before_script:
+#     - >
+#       CREDS=$(aws sts assume-role-with-web-identity
+#         --role-arn "$AWS_ROLE_ARN"
+#         --role-session-name "gitlab-${CI_PROJECT_ID}-${CI_PIPELINE_ID}"
+#         --web-identity-token "$GITLAB_OIDC_TOKEN"
+#         --duration-seconds 3600
+#         --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
+#     - export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | cut -f1)
+#     - export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | cut -f2)
+#     - export AWS_SESSION_TOKEN=$(echo "$CREDS" | cut -f3)
+#
+# Usage in a job:
+#   verify-dev:
+#     extends: .aws-oidc
+#     variables:
+#       AWS_ROLE_ARN: arn:aws:iam::<DEV_ACCOUNT_ID>:role/gitlab-verify-dev
+#     # ...and remove the AWS_ACCESS_KEY_ID / SECRET / SESSION_TOKEN lines.
+#   Note: the existing jobs' `before_script:` would need to be appended to,
+#   not replaced, when you switch — GitLab does not merge before_script across
+#   `extends:`.
+
+stages:
+  - lint
+  - synth
+  - deploy-dev
+  - verify-dev
+  - deploy-prod
+  - verify-prod
+
+variables:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  # Tighten the verify gate as the codebase matures.
+  VERIFY_P99_MS: "5000"
+  VERIFY_ITERATIONS: "10"
+
+default:
+  # Replace this tag with the runner tag your GitLab project uses.
+  # tags:
+  #   - linux
+
+# ─── stage 1 ── unit tests + lint ────────────────────────────────────────────
+
+python-tests:
+  stage: lint
+  image: python:3.12-slim
+  before_script:
+    - python -m pip install --quiet --upgrade pip
+    - pip install --quiet --require-hashes -r requirements-dev.lock
+  script:
+    - python -m compileall -q scripts tests
+    - python -m pytest -q
+  rules:
+    - changes:
+        - "scripts/**/*"
+        - "tests/**/*"
+        - ".gitlab-ci.yml"
+
+cdk-tests:
+  stage: lint
+  image: node:20-slim
+  before_script:
+    - cd cdk
+    - npm ci --silent --no-audit --no-fund || npm install --silent --no-audit --no-fund
+  script:
+    - npm run lint
+    - npm test
+  rules:
+    - changes:
+        - "cdk/**/*"
+        - ".gitlab-ci.yml"
+
+# ─── stage 2 ── synth ────────────────────────────────────────────────────────
+
+cdk-synth:
+  stage: synth
+  image: node:20-slim
+  needs: ["cdk-tests"]
+  before_script:
+    - cd cdk
+    - npm ci --silent --no-audit --no-fund || npm install --silent --no-audit --no-fund
+  script:
+    # cdk-nag (CSR-012) runs automatically as part of this synth — see
+    # cdk/bin/app.ts. A non-zero exit here means an unsuppressed
+    # AwsSolutions-* finding, in addition to any normal synth error.
+    - npx cdk synth --quiet
+  artifacts:
+    paths:
+      - cdk/cdk.out/
+    expire_in: 1 hour
+  rules:
+    - changes:
+        - "cdk/**/*"
+
+# ─── stage 3 ── deploy to a sandbox / dev account ────────────────────────────
+
+deploy-dev:
+  stage: deploy-dev
+  image: node:20-slim
+  needs: ["cdk-synth", "python-tests"]
+  environment:
+    name: dev
+  variables:
+    AWS_ACCESS_KEY_ID: $DEV_AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY: $DEV_AWS_SECRET_ACCESS_KEY
+    AWS_SESSION_TOKEN: $DEV_AWS_SESSION_TOKEN
+  before_script:
+    - cd cdk
+    - npm ci --silent --no-audit --no-fund || npm install --silent --no-audit --no-fund
+  script:
+    - npx cdk deploy Blog-Benchmark-Guardrail Blog-Benchmark-Dashboard
+        --require-approval never
+        --outputs-file cdk-outputs.json
+    - cat cdk-outputs.json
+  artifacts:
+    paths:
+      - cdk/cdk-outputs.json
+    expire_in: 1 day
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      changes:
+        - "cdk/**/*"
+
+# ─── stage 4 ── verify dev (the release gate) ────────────────────────────────
+
+verify-dev:
+  stage: verify-dev
+  image: python:3.12-slim
+  needs: ["deploy-dev"]
+  environment:
+    name: dev
+  variables:
+    AWS_ACCESS_KEY_ID: $DEV_AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY: $DEV_AWS_SECRET_ACCESS_KEY
+    AWS_SESSION_TOKEN: $DEV_AWS_SESSION_TOKEN
+  before_script:
+    - python -m pip install --quiet --upgrade pip
+    - pip install --quiet --require-hashes -r requirements.lock
+    - apt-get update -qq && apt-get install -y -qq jq curl unzip
+    - curl -sSf https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+    - unzip -q /tmp/awscliv2.zip -d /tmp && /tmp/aws/install -i /usr/local/aws-cli -b /usr/local/bin
+  script:
+    - export GUARDRAIL_ID=$(jq -r '."Blog-Benchmark-Guardrail".GuardrailId' cdk/cdk-outputs.json)
+    - export GUARDRAIL_VERSION=$(jq -r '."Blog-Benchmark-Guardrail".GuardrailVersion' cdk/cdk-outputs.json)
+    - echo "Verifying guardrail $GUARDRAIL_ID v$GUARDRAIL_VERSION in $AWS_REGION"
+    - python scripts/verify_deployment.py
+  artifacts:
+    when: always
+    paths:
+      - results/verify_*.json
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ─── stage 5 ── deploy to prod, manual gate ─────────────────────────────────
+
+deploy-prod:
+  stage: deploy-prod
+  image: node:20-slim
+  needs: ["verify-dev"]
+  when: manual
+  environment:
+    name: prod
+  variables:
+    AWS_ACCESS_KEY_ID: $PROD_AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY: $PROD_AWS_SECRET_ACCESS_KEY
+    AWS_SESSION_TOKEN: $PROD_AWS_SESSION_TOKEN
+  before_script:
+    - cd cdk
+    - npm ci --silent --no-audit --no-fund || npm install --silent --no-audit --no-fund
+  script:
+    - npx cdk deploy Blog-Benchmark-Guardrail Blog-Benchmark-Dashboard
+        --require-approval never
+        --outputs-file cdk-outputs.json
+  artifacts:
+    paths:
+      - cdk/cdk-outputs.json
+    expire_in: 1 day
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+# ─── stage 6 ── verify prod ─────────────────────────────────────────────────
+
+verify-prod:
+  stage: verify-prod
+  image: python:3.12-slim
+  needs: ["deploy-prod"]
+  environment:
+    name: prod
+  variables:
+    AWS_ACCESS_KEY_ID: $PROD_AWS_ACCESS_KEY_ID
+    AWS_SECRET_ACCESS_KEY: $PROD_AWS_SECRET_ACCESS_KEY
+    AWS_SESSION_TOKEN: $PROD_AWS_SESSION_TOKEN
+  before_script:
+    - python -m pip install --quiet --upgrade pip
+    - pip install --quiet --require-hashes -r requirements.lock
+    - apt-get update -qq && apt-get install -y -qq jq
+  script:
+    - export GUARDRAIL_ID=$(jq -r '."Blog-Benchmark-Guardrail".GuardrailId' cdk/cdk-outputs.json)
+    - export GUARDRAIL_VERSION=$(jq -r '."Blog-Benchmark-Guardrail".GuardrailVersion' cdk/cdk-outputs.json)
+    - python scripts/verify_deployment.py
+  artifacts:
+    when: always
+    paths:
+      - results/verify_*.json
+    expire_in: 4 weeks
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

@@ -1,0 +1,300 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1010" width="1600" height="1010" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <title>Centralized Amazon Bedrock Guardrails — reference implementation</title>
+  <defs>
+    <style>
+      .t  { font-size: 14.5px; font-weight: 700; }
+      .e  { font-size: 9px; font-weight: 700; letter-spacing: 1.2px; }
+      .b  { font-size: 11.5px; fill: #2B2F36; }
+      .tag{ font-size: 10px; font-style: italic; fill: #A35F00; }
+      .lbl{ font-size: 10px; font-style: italic; }
+      .hd { font-size: 17px; font-weight: 700; }
+      .card { filter: url(#sh); }
+    </style>
+    <filter id="sh" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#1F2937" flood-opacity="0.12"/>
+    </filter>
+
+    <!-- arrowheads -->
+    <marker id="m-navy" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#1F3A68"/></marker>
+    <marker id="m-crim" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#8C1A3F"/></marker>
+    <marker id="m-red"  markerWidth="9" markerHeight="9" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#B03A2E"/></marker>
+    <marker id="m-gray" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#4A4A4A"/></marker>
+    <marker id="m-green" markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#1D6F42"/></marker>
+
+    <!-- glyphs (white line icons, 36x36 grid) -->
+    <symbol id="g-shield" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8 L27 11.5 V18 C27 23 23 26.5 18 28.5 C13 26.5 9 23 9 18 V11.5 Z"/><path d="M14 18 l3 3 l5-6"/></g></symbol>
+    <symbol id="g-org" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="14" y="8" width="8" height="6" rx="1"/><rect x="7" y="22" width="8" height="6" rx="1"/><rect x="21" y="22" width="8" height="6" rx="1"/><path d="M18 14 V18 M11 22 V18 H25 V22"/></g></symbol>
+    <symbol id="g-lock" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="10.5" y="17" width="15" height="11" rx="2"/><path d="M14 17 V14 a4 4 0 0 1 8 0 V17"/><path d="M18 21.5 v2.5"/></g></symbol>
+    <symbol id="g-sliders" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round"><path d="M8 12 H28 M8 18 H28 M8 24 H28"/><circle cx="14" cy="12" r="2.4" fill="#fff"/><circle cx="23" cy="18" r="2.4" fill="#fff"/><circle cx="16" cy="24" r="2.4" fill="#fff"/></g></symbol>
+    <symbol id="g-app" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="9.5" width="21" height="17" rx="2.5"/><path d="M7.5 15 H28.5"/><circle cx="11.5" cy="12.3" r=".6" fill="#fff"/><circle cx="14.5" cy="12.3" r=".6" fill="#fff"/><path d="M13 21 l-2.5 2 l2.5 2 M23 21 l2.5 2 l-2.5 2 M19.5 20 l-3 6"/></g></symbol>
+    <symbol id="g-hex" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7 L27 12 V24 L18 29 L9 24 V12 Z"/><path d="M18 18 V7 M18 18 L27 24 M18 18 L9 24" opacity=".75"/><circle cx="18" cy="18" r="3" fill="#fff"/></g></symbol>
+    <symbol id="g-bars" viewBox="0 0 36 36"><g fill="#fff" stroke="none"><rect x="9" y="19" width="4.5" height="9" rx="1"/><rect x="15.8" y="12" width="4.5" height="16" rx="1"/><rect x="22.6" y="16" width="4.5" height="12" rx="1"/></g></symbol>
+    <symbol id="g-stack" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8 L28 13 L18 18 L8 13 Z"/><path d="M8 18 L18 23 L28 18"/><path d="M8 23 L18 28 L28 23"/></g></symbol>
+    <symbol id="g-chat" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 10 H27.5 V22 H17.5 L12 27 V22 H8.5 Z"/><path d="M14 16 h.1 M18 16 h.1 M22 16 h.1" stroke-width="2.6"/></g></symbol>
+    <symbol id="g-cube" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8 L27 13 V23 L18 28 L9 23 V13 Z"/><path d="M9 13 L18 18 L27 13 M18 18 V28"/></g></symbol>
+    <symbol id="g-pipe" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9.5" cy="18" r="3"/><circle cx="26.5" cy="11" r="3"/><circle cx="26.5" cy="25" r="3"/><path d="M12.5 18 H17 C20 18 20 11 23.5 11 M17 18 C20 18 20 25 23.5 25"/></g></symbol>
+    <symbol id="g-gate" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="9.5"/><path d="M13.5 18.3 l3.2 3.2 l5.8-6.5"/></g></symbol>
+    <symbol id="g-search" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="16" r="6.5"/><path d="M21 21 L27.5 27.5"/><path d="M13 14.5 H19 M13 17.5 H17" stroke-width="1.5"/></g></symbol>
+    <symbol id="g-term" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="7.5" y="9.5" width="21" height="17" rx="2.5"/><path d="M12 16 L15.5 19 L12 22 M18.5 22.5 H24"/></g></symbol>
+    <symbol id="g-box" viewBox="0 0 36 36"><g fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13 L18 8 L28 13 V24 L18 29 L8 24 Z"/><path d="M8 13 L18 18 L28 13 M18 18 V29 M13 10.5 L23 15.5"/></g></symbol>
+
+    <!-- badges: coloured rounded square + glyph -->
+    <symbol id="b-shield-c" viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#01A88D"/><use href="#g-shield" width="36" height="36"/></symbol>
+    <symbol id="b-org-c"    viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#E7157B"/><use href="#g-org" width="36" height="36"/></symbol>
+    <symbol id="b-bars-c"   viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#E7157B"/><use href="#g-bars" width="36" height="36"/></symbol>
+    <symbol id="b-stack-c"  viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#E7157B"/><use href="#g-stack" width="36" height="36"/></symbol>
+    <symbol id="b-org-n"    viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#E7157B"/><use href="#g-org" width="36" height="36"/></symbol>
+    <symbol id="b-sliders-n" viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#01A88D"/><use href="#g-sliders" width="36" height="36"/></symbol>
+    <symbol id="b-app-n"    viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#01A88D"/><use href="#g-app" width="36" height="36"/></symbol>
+    <symbol id="b-lock-r"   viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#DD344C"/><use href="#g-lock" width="36" height="36"/></symbol>
+    <symbol id="b-hex-g"    viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#01A88D"/><use href="#g-hex" width="36" height="36"/></symbol>
+    <symbol id="b-chat-g"   viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#ED7100"/><use href="#g-chat" width="36" height="36"/></symbol>
+    <symbol id="b-cube-g"   viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#1D6F42"/><use href="#g-cube" width="36" height="36"/></symbol>
+    <symbol id="b-pipe-k"   viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#C925D1"/><use href="#g-pipe" width="36" height="36"/></symbol>
+    <symbol id="b-gate-k"   viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#C925D1"/><use href="#g-gate" width="36" height="36"/></symbol>
+    <symbol id="b-search-k" viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#E7157B"/><use href="#g-search" width="36" height="36"/></symbol>
+    <symbol id="b-term-k"   viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#C925D1"/><use href="#g-term" width="36" height="36"/></symbol>
+    <symbol id="b-box-k"    viewBox="0 0 36 36"><rect width="36" height="36" rx="7" fill="#4A4A4A"/><use href="#g-box" width="36" height="36"/></symbol>
+  </defs>
+
+  <rect width="1600" height="1010" fill="#FFFFFF"/>
+
+  <!-- Title -->
+  <text x="800" y="46" text-anchor="middle" font-size="27" font-weight="700" fill="#1F2937">Centralized Amazon Bedrock Guardrails — what this reference implementation builds</text>
+  <text x="800" y="72" text-anchor="middle" font-size="13.5" font-style="italic" fill="#4B5563">Layers 1, 3 and 4 are deployed or scripted here. Layer 2 (SCP) is optional and described in the blog post only — it is not shipped as code.</text>
+
+  <!-- ================= PANELS ================= -->
+  <rect x="20" y="95" width="740" height="515" rx="14" fill="#FBF7F8" stroke="#8C1A3F" stroke-width="2.5"/>
+  <use href="#b-org-c" x="40" y="106" width="28" height="28"/>
+  <text x="78" y="127" class="hd" fill="#8C1A3F">Management or Delegated-Admin Account</text>
+
+  <rect x="860" y="95" width="720" height="515" rx="14" fill="#F6FBF8" stroke="#1D6F42" stroke-width="2.5"/>
+  <use href="#b-cube-g" x="880" y="106" width="28" height="28"/>
+  <text x="918" y="127" class="hd" fill="#1D6F42">Workload Account(s) in the target OU</text>
+
+  <rect x="20" y="640" width="1560" height="330" rx="14" fill="#F8F8F9" stroke="#4A4A4A" stroke-width="2.5"/>
+  <use href="#b-box-k" x="40" y="650" width="28" height="28"/>
+  <text x="78" y="671" class="hd" fill="#4A4A4A">Delivery and evidence (all in this repository)</text>
+
+  <!-- ================= MANAGEMENT ACCOUNT ================= -->
+  <!-- CDK Guardrail -->
+  <g class="card">
+    <rect x="45" y="150" width="300" height="170" rx="9" fill="#FFFFFF" stroke="#8C1A3F" stroke-width="1.8"/>
+  </g>
+  <use href="#b-shield-c" x="59" y="164" width="36" height="36"/>
+  <text x="105" y="174" class="e" fill="#8C1A3F">CDK STACK</text>
+  <text x="105" y="192" class="t" fill="#8C1A3F">Blog-Benchmark-Guardrail</text>
+  <rect x="105" y="200" width="98" height="16" rx="8" fill="#FFF4E0" stroke="#E8B86A"/>
+  <text x="154" y="211.5" text-anchor="middle" class="tag">cdk-nag checked</text>
+  <g class="b">
+    <text x="61" y="244">AWS::Bedrock::Guardrail + GuardrailVersion</text>
+    <text x="61" y="261">content / topic / PII policies</text>
+    <text x="61" y="278">resource policy: ApplyGuardrail +</text>
+    <text x="61" y="295">GetGuardrail, scoped to aws:PrincipalOrgID</text>
+  </g>
+
+  <!-- Layer 1 -->
+  <g class="card">
+    <rect x="415" y="150" width="320" height="170" rx="9" fill="#EEF3FC" stroke="#1F3A68" stroke-width="1.8"/>
+  </g>
+  <use href="#b-org-n" x="429" y="164" width="36" height="36"/>
+  <text x="475" y="174" class="e" fill="#1F3A68">LAYER 1</text>
+  <text x="475" y="192" class="t" fill="#1F3A68">Bedrock Organizations Policy</text>
+  <rect x="475" y="200" width="110" height="16" rx="8" fill="#FFF4E0" stroke="#E8B86A"/>
+  <text x="530" y="211.5" text-anchor="middle" class="tag">hardest to bypass</text>
+  <g class="b">
+    <text x="431" y="244">type BEDROCK_POLICY, attached to the OU</text>
+    <text x="431" y="261">artifacts/bedrock-organizations-policy.json</text>
+    <text x="431" y="278">pins guardrail ARN + numeric version</text>
+    <text x="431" y="295">auto-applies to every invoke in the OU</text>
+  </g>
+
+  <!-- references arrow -->
+  <line x1="347" y1="235" x2="412" y2="235" stroke="#8C1A3F" stroke-width="2.2" marker-end="url(#m-crim)"/>
+  <text x="380" y="226" text-anchor="middle" class="lbl" fill="#8C1A3F">references</text>
+
+  <!-- Dashboard -->
+  <g class="card">
+    <rect x="45" y="360" width="300" height="150" rx="9" fill="#FFFFFF" stroke="#8C1A3F" stroke-width="1.8"/>
+  </g>
+  <use href="#b-bars-c" x="59" y="374" width="36" height="36"/>
+  <text x="105" y="384" class="e" fill="#8C1A3F">CDK STACK</text>
+  <text x="105" y="402" class="t" fill="#8C1A3F">Blog-Benchmark-Dashboard</text>
+  <g class="b">
+    <text x="61" y="442">CloudWatch dashboard + alarms on</text>
+    <text x="61" y="459">AWS/Bedrock/Guardrails metrics</text>
+    <text x="61" y="476">(Invocations, InvocationsIntervened,</text>
+    <text x="61" y="493">latency, throttles, errors)</text>
+  </g>
+
+  <!-- Layer 2 (optional, dashed) -->
+  <rect x="415" y="360" width="320" height="150" rx="9" fill="#FFFFFF" stroke="#B03A2E" stroke-width="2" stroke-dasharray="7 5"/>
+  <use href="#b-lock-r" x="429" y="374" width="36" height="36"/>
+  <text x="475" y="384" class="e" fill="#B03A2E">LAYER 2 · OPTIONAL</text>
+  <text x="475" y="402" class="t" fill="#B03A2E">SCP backstop</text>
+  <rect x="475" y="410" width="76" height="16" rx="8" fill="#FDECEA" stroke="#E3A59E"/>
+  <text x="513" y="421.5" text-anchor="middle" class="lbl" fill="#B03A2E">not shipped</text>
+  <g class="b">
+    <text x="431" y="451">Deny InvokeModel* / Converse* unless</text>
+    <text x="431" y="468">bedrock:GuardrailIdentifier is present</text>
+    <text x="431" y="485">Not in this repository — example shown</text>
+    <text x="431" y="502" style="font-size:11px">in the blog; author + review your own</text>
+  </g>
+
+  <!-- StackSet -->
+  <g class="card">
+    <rect x="45" y="530" width="690" height="62" rx="9" fill="#FFFFFF" stroke="#8C1A3F" stroke-width="1.8"/>
+  </g>
+  <use href="#b-stack-c" x="59" y="543" width="36" height="36"/>
+  <text x="105" y="556" class="t" fill="#8C1A3F">Blog-Benchmark-StackSet</text>
+  <rect x="345" y="544" width="196" height="16" rx="8" fill="#FFF4E0" stroke="#E8B86A"/>
+  <text x="443" y="555.5" text-anchor="middle" class="tag">optional · CDK_DEPLOY_STACKSET=1</text>
+  <text x="105" y="576" class="b">Independent replica of the guardrail stack per target account / region — not a shared guardrail</text>
+
+  <!-- ================= WORKLOAD ACCOUNT ================= -->
+  <!-- Layer 3 -->
+  <g class="card">
+    <rect x="885" y="150" width="335" height="170" rx="9" fill="#EEF3FC" stroke="#1F3A68" stroke-width="1.8"/>
+  </g>
+  <use href="#b-sliders-n" x="899" y="164" width="36" height="36"/>
+  <text x="945" y="174" class="e" fill="#1F3A68">LAYER 3</text>
+  <text x="945" y="192" class="t" fill="#1F3A68">Account-level enforced config</text>
+  <rect x="945" y="200" width="82" height="16" rx="8" fill="#FFF4E0" stroke="#E8B86A"/>
+  <text x="986" y="211.5" text-anchor="middle" class="tag">account-wide</text>
+  <g class="b">
+    <text x="901" y="244">PutEnforcedGuardrailConfiguration</text>
+    <text x="901" y="261">scripts/set_ | get_ | delete_</text>
+    <text x="901" y="278">account_enforcement.py · one configId</text>
+    <text x="901" y="295">per account + region · evaluates every invoke</text>
+  </g>
+
+  <!-- Layer 4 -->
+  <g class="card">
+    <rect x="1235" y="150" width="320" height="170" rx="9" fill="#EEF3FC" stroke="#1F3A68" stroke-width="1.8"/>
+  </g>
+  <use href="#b-app-n" x="1249" y="164" width="36" height="36"/>
+  <text x="1295" y="174" class="e" fill="#1F3A68">LAYER 4</text>
+  <text x="1295" y="192" class="t" fill="#1F3A68">Per-app attachment</text>
+  <rect x="1295" y="200" width="88" height="16" rx="8" fill="#FFF4E0" stroke="#E8B86A"/>
+  <text x="1339" y="211.5" text-anchor="middle" class="tag">most granular</text>
+  <g class="b">
+    <text x="1251" y="244">guardrailIdentifier + guardrailVersion</text>
+    <text x="1251" y="261">on each InvokeModel / Converse call</text>
+    <text x="1251" y="278">scripts/run_benchmark.py, capture_trace.py</text>
+    <text x="1251" y="295">cross-account: full ARN + IAM grant</text>
+  </g>
+
+  <!-- Bedrock Runtime -->
+  <g class="card">
+    <rect x="885" y="360" width="670" height="140" rx="9" fill="#E6F5EC" stroke="#1D6F42" stroke-width="2"/>
+  </g>
+  <use href="#b-hex-g" x="900" y="374" width="36" height="36"/>
+  <text x="946" y="389" class="t" fill="#1D6F42" style="font-size:16px">Amazon Bedrock Runtime</text>
+  <text x="946" y="407" class="b" style="font-size:11px;fill:#1D6F42">InvokeModel · InvokeModelWithResponseStream · Converse · ConverseStream</text>
+  <g class="b">
+    <text x="902" y="440">Evaluates every applicable guardrail on the same call: org-enforced, account-enforced and request-supplied.</text>
+    <text x="902" y="458">Assessments are unioned; any BLOCKED finding sets amazon-bedrock-guardrailAction = INTERVENED</text>
+    <text x="902" y="476">and the model never runs.</text>
+  </g>
+
+  <!-- Harness -->
+  <g class="card">
+    <rect x="885" y="530" width="670" height="62" rx="9" fill="#FFFFFF" stroke="#1D6F42" stroke-width="1.8"/>
+  </g>
+  <use href="#b-chat-g" x="899" y="543" width="36" height="36"/>
+  <text x="945" y="556" class="t" fill="#1D6F42">GenAI application / test harness</text>
+  <text x="945" y="576" class="b">Any principal with bedrock:InvokeModel — the benchmark and verify scripts play this role here</text>
+
+  <!-- ================= DELIVERY ================= -->
+  <!-- GitLab CI -->
+  <g class="card">
+    <rect x="45" y="690" width="480" height="150" rx="9" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.8"/>
+  </g>
+  <use href="#b-pipe-k" x="59" y="704" width="36" height="36"/>
+  <text x="105" y="722" class="t" fill="#374151">GitLab CI  (.gitlab-ci.yml)</text>
+  <g class="b">
+    <text x="61" y="768">lint → synth (cdk-nag) → deploy-dev → verify-dev</text>
+    <text x="61" y="785">→ deploy-prod (manual) → verify-prod</text>
+    <text x="61" y="802">Static CI credentials = sandbox only;</text>
+    <text x="61" y="819">OIDC .aws-oidc template provided</text>
+  </g>
+
+  <!-- Release gate -->
+  <g class="card">
+    <rect x="545" y="690" width="520" height="150" rx="9" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.8"/>
+  </g>
+  <use href="#b-gate-k" x="559" y="704" width="36" height="36"/>
+  <text x="605" y="722" class="t" fill="#374151">Release gate  scripts/verify_deployment.py</text>
+  <rect x="605" y="730" width="80" height="16" rx="8" fill="#FFF4E0" stroke="#E8B86A"/>
+  <text x="645" y="741.5" text-anchor="middle" class="tag">fails closed</text>
+  <g class="b">
+    <text x="561" y="768">p99 latency budget on benign prompts</text>
+    <text x="561" y="785">Known-bad prompt → INTERVENED, and the BLOCKED</text>
+    <text x="561" y="802">assessment is attributed to the deployed guardrail</text>
+    <text x="561" y="819">DRAFT-version behaviour (standalone vs org policy)</text>
+  </g>
+
+  <!-- CloudTrail -->
+  <g class="card">
+    <rect x="1085" y="690" width="470" height="150" rx="9" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.8"/>
+  </g>
+  <use href="#b-search-k" x="1099" y="704" width="36" height="36"/>
+  <text x="1145" y="722" class="t" fill="#374151">CloudTrail + Logs Insights  (queries/)</text>
+  <g class="b">
+    <text x="1101" y="768">Invoke* / Converse* = management events</text>
+    <text x="1101" y="785">ApplyGuardrail = data event (AWS::Bedrock::Guardrail)</text>
+    <text x="1101" y="802">— off by default, enable on the trail</text>
+    <text x="1101" y="819">eventSource bedrock.amazonaws.com</text>
+  </g>
+
+  <!-- Measurement scripts -->
+  <g class="card">
+    <rect x="45" y="855" width="1510" height="95" rx="9" fill="#FFFFFF" stroke="#4A4A4A" stroke-width="1.8"/>
+  </g>
+  <use href="#b-term-k" x="59" y="869" width="36" height="36"/>
+  <text x="105" y="893" class="t" fill="#374151">Measurement scripts</text>
+  <text x="105" y="915" class="b" style="font-family: 'SF Mono', Menlo, Consolas, monospace; font-size:11.5px">run_benchmark.py · capture_trace.py · reproduce_failure_modes.py · verify_effective_policy.py · generate_chart.py</text>
+  <text x="105" y="936" class="b" style="font-size:11px;fill:#6B7280">results/ is chmod 0700 / files 0600 (may contain prompts and PII detections) — treat as sensitive</text>
+
+  <!-- ================= CONNECTORS ================= -->
+  <!-- Layer 1 -> Runtime -->
+  <path d="M735 200 H810 V400 H883" fill="none" stroke="#1F3A68" stroke-width="2.6" stroke-linejoin="round" marker-end="url(#m-navy)"/>
+  <rect x="766" y="262" width="88" height="34" rx="6" fill="#FFFFFF"/>
+  <text x="810" y="277" text-anchor="middle" class="lbl" fill="#1F3A68">auto-applies</text>
+  <text x="810" y="290" text-anchor="middle" class="lbl" fill="#1F3A68">to every invoke</text>
+
+  <!-- Layer 2 -> Runtime (optional) -->
+  <path d="M737 470 H883" fill="none" stroke="#B03A2E" stroke-width="2.2" stroke-dasharray="7 5" marker-end="url(#m-red)"/>
+  <rect x="768" y="430" width="84" height="32" rx="6" fill="#FFFFFF"/>
+  <text x="810" y="444" text-anchor="middle" class="lbl" fill="#B03A2E">if adopted:</text>
+  <text x="810" y="457" text-anchor="middle" class="lbl" fill="#B03A2E">deny first</text>
+
+  <!-- Layer 3 / 4 -> Runtime -->
+  <line x1="1052" y1="320" x2="1052" y2="358" stroke="#1F3A68" stroke-width="2.6" marker-end="url(#m-navy)"/>
+  <line x1="1395" y1="320" x2="1395" y2="358" stroke="#1F3A68" stroke-width="2.6" marker-end="url(#m-navy)"/>
+
+  <!-- Harness -> Runtime -->
+  <line x1="1220" y1="530" x2="1220" y2="502" stroke="#1D6F42" stroke-width="2.6" marker-end="url(#m-green)"/>
+
+  <!-- cdk deploy (GitLab -> StackSet) -->
+  <line x1="500" y1="688" x2="500" y2="594" stroke="#4A4A4A" stroke-width="2.4" marker-end="url(#m-gray)"/>
+  <rect x="455" y="616" width="90" height="18" rx="9" fill="#FFFFFF" stroke="#C9CCD1"/>
+  <text x="500" y="629" text-anchor="middle" class="lbl" fill="#374151">cdk deploy</text>
+
+  <!-- invokes (Release gate -> Harness) -->
+  <line x1="1000" y1="688" x2="1000" y2="594" stroke="#4A4A4A" stroke-width="2.4" marker-end="url(#m-gray)"/>
+  <rect x="930" y="616" width="140" height="18" rx="9" fill="#FFFFFF" stroke="#C9CCD1"/>
+  <text x="1000" y="629" text-anchor="middle" class="lbl" fill="#374151">invokes · trace=ENABLED</text>
+
+  <!-- events (Harness -> CloudTrail) -->
+  <line x1="1450" y1="596" x2="1450" y2="688" stroke="#4A4A4A" stroke-width="2.4" stroke-dasharray="6 5" marker-end="url(#m-gray)"/>
+  <rect x="1417" y="616" width="66" height="18" rx="9" fill="#FFFFFF" stroke="#C9CCD1"/>
+  <text x="1450" y="629" text-anchor="middle" class="lbl" fill="#374151">events</text>
+
+  <!-- ================= LEGEND ================= -->
+  <line x1="260" y1="994" x2="296" y2="994" stroke="#4A4A4A" stroke-width="2.4"/>
+  <text x="304" y="998" font-size="12" fill="#4B5563">Built or scripted here</text>
+  <line x1="470" y1="994" x2="506" y2="994" stroke="#B03A2E" stroke-width="2.2" stroke-dasharray="7 5"/>
+  <text x="514" y="998" font-size="12" fill="#4B5563">Optional control, described in the blog — not shipped</text>
+  <text x="1340" y="998" text-anchor="end" font-size="12" font-style="italic" fill="#6B7280">Not depicted because not built: IAM Identity Center, AWS Config, CodePipeline.</text>
+</svg>
